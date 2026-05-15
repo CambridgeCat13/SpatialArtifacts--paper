@@ -170,16 +170,29 @@ p_c <- ggplot(plot_data_sorted, aes(x=pxl_col_in_fullres, y=pxl_row_in_fullres, 
   coord_fixed(xlim=x_limits, ylim=y_limits) + scale_y_reverse() +
   ggtitle("C. SpatialArtifacts Classification") + my_theme + theme(legend.position="right")
 
+p_g <- ggplot(plot_data_all, aes(x=class_factor, y=log10(sum_umi+1), fill=class_factor)) +
+  geom_violin(scale="width", color=NA, alpha=0.8) +
+  scale_fill_manual(values=artifact_colors) +
+  ggtitle("D. UMI Distribution") + ylab("log10(UMI)") + theme_vio
+
+p_h <- ggplot(plot_data_all, aes(x=class_factor, y=log10(detected+1), fill=class_factor)) +
+  geom_violin(scale="width", color=NA, alpha=0.8) +
+  scale_fill_manual(values=artifact_colors) +
+  ggtitle("E. Gene Distribution") + ylab("log10(Genes)") + theme_vio
+
 target_cluster_id <- "1"
-cluster1_data <- subset(plot_data_all, cluster == target_cluster_id)
+cluster1_data <- subset(plot_data_all, as.character(plot_data_all$cluster) == target_cluster_id)
+other_data <- plot_data_all[as.character(plot_data_all$cluster) != target_cluster_id, ]
+
 p_d <- ggplot() +
-  geom_point(data=plot_data_all, aes(x=pxl_col_in_fullres, y=pxl_row_in_fullres),
+  geom_point(data=other_data, aes(x=pxl_col_in_fullres, y=pxl_row_in_fullres),
              color="grey95", size=hd_point_size, stroke=0) +
-  geom_point(data=cluster1_data, aes(x=pxl_col_in_fullres, y=pxl_row_in_fullres, color=class_factor),
+  geom_point(data=cluster1_data[order(ifelse(cluster1_data$class_factor == "Normal Spot", 1, 2)),],
+             aes(x=pxl_col_in_fullres, y=pxl_row_in_fullres, color=class_factor),
              size=hd_point_size, stroke=0, alpha=1) +
   scale_color_manual(values=artifact_colors, name="Type") +
   coord_fixed(xlim=x_limits, ylim=y_limits) + scale_y_reverse() +
-  ggtitle(paste0("D. Anatomy of Cluster ", target_cluster_id)) +
+  ggtitle("F. Anatomy of Cluster 1") +
   my_theme + theme(legend.position="right")
 
 p_e <- ggplot(plot_data_all, aes(x=cluster, fill=class_factor)) +
@@ -187,24 +200,22 @@ p_e <- ggplot(plot_data_all, aes(x=cluster, fill=class_factor)) +
   scale_fill_manual(values=artifact_colors) +
   scale_y_continuous(labels=scales::percent) +
   theme_classic() +
-  ggtitle("E. Artifact Composition") + ylab("Percentage") + xlab("Cluster ID") +
+  ggtitle("G. Artifact Composition") + ylab("Percentage") + xlab("Cluster ID") +
   theme(plot.title=element_text(size=16, face="bold"),
         legend.position="none",
         axis.text.x=element_text(size=10, angle=90),
         axis.text.y=element_text(size=12),
         axis.title=element_text(size=13),
         plot.margin=margin(2, 2, 2, 2))
-
 global_cutoff <- 500
 plot_data_all$is_global_low <- plot_data_all$sum_umi < global_cutoff
 plot_data_global <- plot_data_all[order(plot_data_all$is_global_low), ]
-
 p_f <- ggplot(plot_data_global, aes(x=UMAP1, y=UMAP2, color=is_global_low)) +
   geom_point(size=0.5, alpha=0.6, stroke=0) +
   scale_color_manual(values=c("FALSE"="#E0E0E0", "TRUE"="#D32F2F"),
                      labels=c("Pass", paste0("Fail (<", global_cutoff, ")"))) +
   theme_classic() +
-  ggtitle(paste0("F. Global Threshold (UMI < ", global_cutoff, ")")) +
+  ggtitle(paste0("H. Global Threshold (UMI < ", global_cutoff, ")")) +
   theme(legend.position="bottom",
         legend.title=element_blank(),
         plot.title=element_text(size=16, face="bold"),
@@ -212,128 +223,159 @@ p_f <- ggplot(plot_data_global, aes(x=UMAP1, y=UMAP2, color=is_global_low)) +
         axis.title=element_text(size=13),
         plot.margin=margin(2, 2, 2, 2))
 
-p_g <- ggplot(plot_data_all, aes(x=class_factor, y=log10(sum_umi+1), fill=class_factor)) +
-  geom_violin(scale="width", color=NA, alpha=0.8) +
-  scale_fill_manual(values=artifact_colors) +
-  ggtitle("G. UMI") + ylab("log10(UMI)") + theme_vio
-
-p_h <- ggplot(plot_data_all, aes(x=class_factor, y=log10(detected+1), fill=class_factor)) +
-  geom_violin(scale="width", color=NA, alpha=0.8) +
-  scale_fill_manual(values=artifact_colors) +
-  ggtitle("H. Genes") + ylab("log10(Genes)") + theme_vio
-
 final_plot_complete <- (p_a | p_b | p_c) /
-                       (p_d | p_e | p_f) /
-                       (p_g | p_h) +
-                       plot_layout(heights=c(1.2, 1.0, 0.9)) &
+                       (p_g | p_h) /
+                       (p_d | p_e | p_f) +
+                       plot_layout(heights=c(1.2, 0.9, 1.0)) &
                        theme(plot.margin=margin(1, 1, 1, 1))
 
-ggsave("Figure4_VisiumHD_Colon.png", plot=final_plot_complete, width=15, height=16, dpi=300, bg="white")
+ggsave("Figure4_VisiumHD_Colon.png", plot=final_plot_complete, 
+       width=15, height=16, dpi=300, bg="white")
 
-# Supplementary Figure 4: Comprehensive Validation
+# Supplementary Figure 4
+library(scater)
+library(cowplot)
+library(dplyr)
+
 n_clust <- length(unique(plot_data_all$cluster))
 cols_bio <- scales::hue_pal()(n_clust)
 names(cols_bio) <- levels(plot_data_all$cluster)
- 
-cols_hl <- rep("#E0E0E0", n_clust)
-names(cols_hl) <- levels(plot_data_all$cluster)
-cols_hl[target_cluster_id] <- "#FF4500"
- 
-hd_shape <- 15
-hd_size_square <- 0.8
- 
-my_theme_supp <- theme_void() +
-  theme(plot.title=element_text(face="bold", size=12, hjust=0.5))
- 
+
 df_clean <- plot_data_all[plot_data_all$class_factor == "Normal Spot", ]
- 
-p_s1 <- ggplot(plot_data_all, aes(x=pxl_col_in_fullres, y=pxl_row_in_fullres, color=cluster)) +
-  geom_point(shape=hd_shape, size=hd_size_square, stroke=0) +
-  scale_color_manual(values=cols_bio) +
-  coord_fixed() + scale_y_reverse() + my_theme_supp +
-  ggtitle("S1. Colorectal (OSTA) Visium HD\nSpatial Clusters (All)") +
-  theme(legend.position="none")
- 
-p_s2 <- ggplot(df_clean, aes(x=pxl_col_in_fullres, y=pxl_row_in_fullres, color=cluster)) +
-  geom_point(shape=hd_shape, size=hd_size_square, stroke=0) +
-  scale_color_manual(values=cols_bio) +
-  coord_fixed() + scale_y_reverse() + my_theme_supp +
-  ggtitle("S2. Colorectal (OSTA) Visium HD\nSpatial Clusters (Filtered)") +
-  theme(legend.position="none")
- 
-df_ord <- plot_data_all[order(ifelse(plot_data_all$cluster == target_cluster_id, 2, 1)), ]
- 
-p_u1 <- ggplot(df_ord, aes(x=UMAP1, y=UMAP2, color=cluster)) +
-  geom_point(size=0.5, stroke=0, alpha=0.8) +
-  scale_color_manual(values=cols_hl) +
-  theme_classic() +
-  ggtitle(paste0("U1. Colorectal (OSTA) Visium HD\nUMAP Before (Highlight C", target_cluster_id, ")")) +
-  theme(legend.position="none", plot.title=element_text(face="bold", size=12, hjust=0.5),
-        axis.title=element_blank(), axis.text=element_blank(), axis.ticks=element_blank())
- 
-p_u2 <- ggplot(df_clean, aes(x=UMAP1, y=UMAP2, color=cluster)) +
-  geom_point(size=0.5, stroke=0, alpha=0.6) +
-  scale_color_manual(values=cols_hl) +
-  theme_classic() +
-  ggtitle("U2. Colorectal (OSTA) Visium HD\nUMAP After (Filtered)") +
-  theme(legend.position="none", plot.title=element_text(face="bold", size=12, hjust=0.5),
-        axis.title=element_blank(), axis.text=element_blank(), axis.ticks=element_blank())
- 
-run_pb_pca <- function(spe_obj, cluster_ids) {
-  pb <- aggregateAcrossCells(spe_obj, ids=cluster_ids)
-  pb <- pb[, colSums(counts(pb)) > 0, drop=FALSE]
-  sizeFactors(pb) <- colSums(counts(pb))
-  pb <- logNormCounts(pb)
-  pb <- runPCA(pb, ncomponents=min(2, ncol(pb)-1))
-  df <- as.data.frame(reducedDim(pb, "PCA"))
-  df$cluster <- colnames(pb)
-  var_exp <- attr(reducedDim(pb, "PCA"), "percentVar")
-  return(list(df=df, pc1_var=round(var_exp[1], 1), pc2_var=round(var_exp[2], 1)))
-}
- 
-pb_res_before <- run_pb_pca(spe_classified, spe_classified$cluster)
-pb_df_before <- pb_res_before$df
-counts_all <- table(spe_classified$cluster)
-pct_all <- round((counts_all / sum(counts_all)) * 100, 1)
-pb_df_before$cluster_label <- paste0(pb_df_before$cluster, "\n(", pct_all[as.character(pb_df_before$cluster)], "%)")
- 
-p_p1 <- ggplot(pb_df_before, aes(x=PC1, y=PC2, color=cluster, label=cluster_label)) +
-  geom_point(size=5, alpha=0.9) +
-  geom_text_repel(color="black", size=4, fontface="bold", box.padding=0.6,
-                  point.padding=0.5, min.segment.length=0, max.overlaps=Inf) +
-  scale_color_manual(values=cols_hl) + theme_classic() +
-  ggtitle("P1. Colorectal (OSTA) Visium HD\nPseudo-bulk PCA (Before)") +
-  xlab(paste0("PC1 (", pb_res_before$pc1_var, "%)")) +
-  ylab(paste0("PC2 (", pb_res_before$pc2_var, "%)")) +
-  theme(legend.position="none", plot.title=element_text(face="bold", size=12, hjust=0.5)) +
-  scale_x_continuous(expand=expansion(mult=0.2)) +
-  scale_y_continuous(expand=expansion(mult=0.2))
- 
+
+p_s1 <- ggplot(plot_data_all, aes(x=pxl_col_in_fullres, y=pxl_row_in_fullres, 
+                                   color=cluster)) +
+  geom_point(size=hd_point_size, stroke=0, alpha=hd_alpha) +
+  scale_color_manual(values=cols_bio, name="Cluster") +
+  coord_fixed(xlim=x_limits, ylim=y_limits) + scale_y_reverse() +
+  ggtitle("A. Spatial Clusters (All)") +
+  theme_void() +
+  theme(plot.title=element_text(face="bold", size=12, hjust=0.5),
+        legend.position="bottom",
+        legend.key.size=unit(0.3,"cm"),
+        legend.text=element_text(size=7),
+        legend.title=element_text(size=8)) +
+  guides(color=guide_legend(nrow=3, override.aes=list(size=3)))
+
+p_s2 <- ggplot(df_clean, aes(x=pxl_col_in_fullres, y=pxl_row_in_fullres, 
+                               color=cluster)) +
+  geom_point(size=hd_point_size, stroke=0, alpha=hd_alpha) +
+  scale_color_manual(values=cols_bio, name="Cluster") +
+  coord_fixed(xlim=x_limits, ylim=y_limits) + scale_y_reverse() +
+  ggtitle("B. Spatial Clusters (Filtered)") +
+  theme_void() +
+  theme(plot.title=element_text(face="bold", size=12, hjust=0.5),
+        legend.position="bottom",
+        legend.key.size=unit(0.3,"cm"),
+        legend.text=element_text(size=7),
+        legend.title=element_text(size=8)) +
+  guides(color=guide_legend(nrow=3, override.aes=list(size=3)))
+
+spe_classified$cluster <- factor(spe_classified$cluster)
+spe_classified$edge_dryspot_hd_classification <- factor(
+  spe_classified$edge_dryspot_hd_classification)
+
+p_expl_before <- plotExplanatoryPCs(
+  spe_classified,
+  variables = c("sum_umi", "detected", "edge_dryspot_hd_classification"),
+  npcs = 10
+) + ggtitle("C. Explanatory PCs (Before Filtering)") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+
 spe_clean_obj <- spe_classified[, spe_classified$edge_dryspot_hd_classification == "not_artifact"]
-spe_clean_obj$cluster <- droplevels(spe_clean_obj$cluster)
- 
-pb_res_after <- run_pb_pca(spe_clean_obj, spe_clean_obj$cluster)
-pb_df_after <- pb_res_after$df
-counts_clean <- table(spe_clean_obj$cluster)
-pct_clean <- round((counts_clean / sum(counts_clean)) * 100, 1)
-pb_df_after$cluster_label <- paste0(pb_df_after$cluster, "\n(", pct_clean[as.character(pb_df_after$cluster)], "%)")
- 
-p_p2 <- ggplot(pb_df_after, aes(x=PC1, y=PC2, color=cluster, label=cluster_label)) +
-  geom_point(size=5, alpha=0.9) +
-  geom_text_repel(color="black", size=4, fontface="bold", box.padding=0.6,
-                  point.padding=0.5, min.segment.length=0, max.overlaps=Inf) +
-  scale_color_manual(values=cols_bio) + theme_classic() +
-  ggtitle("P2. Colorectal (OSTA) Visium HD\nPseudo-bulk PCA (After)") +
-  xlab(paste0("PC1 (", pb_res_after$pc1_var, "%)")) +
-  ylab(paste0("PC2 (", pb_res_after$pc2_var, "%)")) +
-  theme(legend.position="none", plot.title=element_text(face="bold", size=12, hjust=0.5)) +
-  scale_x_continuous(expand=expansion(mult=0.2)) +
-  scale_y_continuous(expand=expansion(mult=0.2))
- 
-supp_plot <- (p_s1 + p_s2) /
-             (p_u1 + p_u2) /
-             (p_p1 + p_p2) +
-             plot_layout(heights=c(1, 0.8, 0.8))
- 
-ggsave("Supp_Figure4_VisiumHD.png", supp_plot, width=12, height=15, dpi=300, bg="white")
- 
+spe_clean_obj <- runPCA(spe_clean_obj, ncomponents = 30)
+
+p_expl_after <- plotExplanatoryPCs(
+  spe_clean_obj,
+  variables = c("sum_umi", "detected"),
+  npcs = 10
+) + ggtitle("D. Explanatory PCs (After Filtering)") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+
+plot_data_all$comparison_group <- case_when(
+  plot_data_all$class_factor == "Large Edge"     ~ "Large Edge\n(SpatialArtifacts)",
+  plot_data_all$class_factor == "Small Edge"     ~ "Small Edge\n(SpatialArtifacts)",
+  plot_data_all$class_factor == "Large Interior" ~ "Large Interior\n(SpatialArtifacts)",
+  plot_data_all$class_factor == "Small Interior" ~ "Small Interior\n(SpatialArtifacts)",
+  plot_data_all$sum_umi < 500 & plot_data_all$class_factor == "Normal Spot" ~ "False Positive\n(Standard QC only)",
+  TRUE ~ "Normal Spot"
+)
+
+plot_data_all$comparison_group <- factor(plot_data_all$comparison_group, levels = c(
+  "Large Edge\n(SpatialArtifacts)",
+  "Small Edge\n(SpatialArtifacts)",
+  "Large Interior\n(SpatialArtifacts)",
+  "Small Interior\n(SpatialArtifacts)",
+  "False Positive\n(Standard QC only)",
+  "Normal Spot"
+))
+
+comparison_colors <- c(
+  "Large Edge\n(SpatialArtifacts)"      = "#FF4500",
+  "Small Edge\n(SpatialArtifacts)"      = "#FFB347",
+  "Large Interior\n(SpatialArtifacts)"  = "#0047AB",
+  "Small Interior\n(SpatialArtifacts)"  = "#00CED1",
+  "False Positive\n(Standard QC only)"  = "#9370DB",
+  "Normal Spot"                          = "lightgray"
+)
+
+p_comparison <- ggplot(plot_data_all,
+                       aes(x = comparison_group, y = log10(sum_umi + 1),
+                           fill = comparison_group)) +
+  geom_violin(scale = "width", color = NA, alpha = 0.8) +
+  geom_boxplot(width = 0.1, fill = "white", outlier.shape = NA) +
+  scale_fill_manual(values = comparison_colors) +
+  theme_classic() +
+  ggtitle("E. SpatialArtifacts vs Standard QC: UMI Distribution") +
+  ylab("log10(UMI)") +
+  theme(legend.position = "none",
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(face = "bold"))
+
+epcam_id <- "ENSG00000119888"
+acta2_id <- "ENSG00000107796"
+cdh1_id  <- "ENSG00000039068"
+
+genes_of_interest <- c("EPCAM", "ACTA2", "CDH1")
+ensembl_ids <- c(epcam_id, acta2_id, cdh1_id)
+
+for (i in seq_along(genes_of_interest)) {
+  colData(spe_classified)[[genes_of_interest[i]]] <-
+    as.numeric(logcounts(spe_classified)[ensembl_ids[i], ])
+}
+
+plot_data_genes <- as.data.frame(colData(spe_classified))
+
+plot_list_hd <- lapply(genes_of_interest, function(gene) {
+  ggplot(plot_data_genes,
+         aes(x = pxl_col_in_fullres, y = pxl_row_in_fullres,
+             color = .data[[gene]])) +
+    geom_point(size = hd_point_size, stroke = 0, alpha = hd_alpha) +
+    scale_color_viridis_c(option = "magma", name = "log\nnorm") +
+    coord_fixed(xlim = x_limits, ylim = y_limits) + scale_y_reverse() +
+    theme_void() +
+    theme(plot.title = element_text(face = "bold.italic", hjust = 0.5),
+          legend.position = "right",
+          legend.key.size = unit(0.3, "cm"),
+          legend.text = element_text(size = 7),
+          legend.title = element_text(size = 7))
+})
+names(plot_list_hd) <- genes_of_interest
+
+p_epcam <- plot_list_hd[["EPCAM"]] + ggtitle("F. EPCAM")
+p_acta2 <- plot_list_hd[["ACTA2"]] + ggtitle("G. ACTA2")
+p_cdh1  <- plot_list_hd[["CDH1"]]  + ggtitle("H. CDH1")        
+
+row1 <- plot_grid(p_s1, p_s2, ncol=2)
+row2 <- plot_grid(p_expl_before, p_expl_after, ncol=2)
+row3 <- plot_grid(p_comparison, p_epcam, p_acta2, p_cdh1, ncol=4)
+
+supp_fig4 <- plot_grid(
+  row1, row2, row3,
+  ncol=1,
+  rel_heights=c(1.2, 1, 1)
+)
+
+ggsave("Supplementary_Figure4_VisiumHD.png", supp_fig4,
+       width=18, height=16, dpi=300, bg="white")
