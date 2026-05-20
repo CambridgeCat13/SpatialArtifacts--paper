@@ -61,3 +61,9 @@ Rscript SuppleFig5_6.R
 ## Data
 
 Data used in this manuscript are publicly available. See the Data Availability section of the manuscript for details.
+
+## Citation
+
+If you use this code or the SpatialArtifacts package in your work, please cite:
+
+He J, Thompson JR, Totty MS, Hicks SC (2026). SpatialArtifacts: a computational framework for tissue artifact detection in spatial transcriptomics data. <https://doi.org/10.64898/2026.05.15.725260>
